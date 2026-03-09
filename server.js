@@ -9,10 +9,12 @@ const PORT = process.env.PORT || 3000;
 // ===== ROUTES =====
 // Ví dụ: const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
+const productRoutes = require('./routes/products');
 const app = express();
 // ===== API ROUTES =====
 // Ví dụ: app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/products', productRoutes);
 // ===== CORS =====
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
@@ -20,6 +22,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
