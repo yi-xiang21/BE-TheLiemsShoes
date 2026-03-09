@@ -8,9 +8,11 @@ const PORT = process.env.PORT || 3000;
 
 // ===== ROUTES =====
 // Ví dụ: const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/users');
 const app = express();
 // ===== API ROUTES =====
 // Ví dụ: app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 // ===== CORS =====
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
