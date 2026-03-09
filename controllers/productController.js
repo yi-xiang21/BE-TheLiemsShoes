@@ -61,8 +61,108 @@ async function deleteProduct(req, res) {
     }
 }
 
+// lấy danh sách sản phẩm
+async function getProducts(req, res) {
+    try {
+        const [rows] = await pool.execute(`
+            SELECT p.*, c.category_name 
+            FROM products p
+            LEFT JOIN categories c ON p.category_id = c.id
+        `);
+
+        return res.status(200).json({
+            status: 'success',
+            data: rows
+        });
+    } catch (error) {
+        return res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+}
+
+// lấy chi tiết sản phẩm
+async function getProductById(req, res) {
+    try {
+        const productId = req.params.id;
+
+        const [rows] = await pool.execute(`
+            SELECT p.*, c.category_name
+            FROM products p
+            LEFT JOIN categories c ON p.category_id = c.id
+            WHERE p.id = ?
+        `, [productId]);
+
+        if (!rows.length) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Product not found'
+            });
+        }
+
+        return res.status(200).json({
+            status: 'success',
+            data: rows[0]
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+}
+
+// quản lý tồn kho (update stock)
+async function updateStock(req, res) {
+    try {
+
+        const productId = req.params.id;
+        const { stock_quantity } = req.body;
+
+        if (!stock_quantity) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Stock quantity is required'
+            });
+        }
+
+        const [rows] = await pool.execute(
+            `SELECT * FROM products WHERE id = ?`,
+            [productId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Product not found'
+            });
+        }
+
+        await pool.execute(
+            `UPDATE products SET stock_quantity = ? WHERE id = ?`,
+            [stock_quantity, productId]
+        );
+
+        return res.status(200).json({
+            status: 'success',
+            message: 'Stock updated successfully'
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+}
+
 module.exports = {
     addProduct,
     updateProduct,
-    deleteProduct
+    deleteProduct,
+    getProducts,
+    getProductById,
+    updateStock
 }
