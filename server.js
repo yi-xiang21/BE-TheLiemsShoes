@@ -3,19 +3,10 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
-
+// ===== CORS ===== cho phep frontend truy cap backend
+const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ===== ROUTES =====
-// Ví dụ: const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/users');
-const productRoutes = require('./routes/products');
-const app = express();
-// ===== API ROUTES =====
-// Ví dụ: app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/products', productRoutes);
-// ===== CORS =====
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
   credentials: true,
@@ -26,6 +17,18 @@ app.use(cors({
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ===== ROUTES =====
+// Ví dụ: const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/users');
+const productRoutes = require('./routes/products');
+
+// ===== API ROUTES =====
+// Ví dụ: app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/products', productRoutes);
+
+
 // ===== HEALTH CHECK =====
 app.get('/health', (req, res) => {
   res.json({
