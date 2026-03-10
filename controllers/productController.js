@@ -11,12 +11,12 @@ async function addProduct(req, res) {
         // if (!isAdmin(req)) {
         //     return res.status(403).json({ status: 'error', message: 'Access denied' });
         // }
-        const { name, price, description, category_id, stock_quantity } = req.body;
-        if (!name || !price || !description || !category_id || !stock_quantity) {
+        const { product_name, price, description, category_id, stock_quantity } = req.body;
+        if (!product_name || !price || !description || !category_id || !stock_quantity) {
             return res.status(400).json({ status: 'error', message: 'Missing required fields' });
         }
-        const [result] = await pool.execute(`INSERT INTO products (category_id, name, description, price, stock_quantity) VALUES (?, ?, ?, ?, ?)`, [category_id, name.trim(), description.trim(), price, stock_quantity]);
-        return res.status(201).json({ status: 'success', message: 'Product added successfully', data: result.insertId });
+        const result = await pool.query(`INSERT INTO products (category_id, product_name, description, price, stock_quantity) VALUES ($1, $2, $3, $4, $5) RETURNING id`, [category_id, product_name.trim(), description.trim(), price, stock_quantity]);
+        return res.status(201).json({ status: 'success', message: 'Product added successfully', data: result.rows[0].id });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
     }
@@ -29,13 +29,13 @@ async function updateProduct(req, res) {
         //     return res.status(403).json({ status: 'error', message: 'Access denied' });
         // }
         const productId = req.params.id;
-        const { name, price, description, category_id, stock_quantity } = req.body;
+        const { product_name, price, description, category_id, stock_quantity } = req.body;
         // Kiểm tra xem sản phẩm có tồn tại hay không
-        const [rows] = await pool.execute(`SELECT * FROM products WHERE id = ?`, [productId]);
-        if (!rows.length) {
+        const check = await pool.query(`SELECT * FROM products WHERE id = $1`, [productId]);
+        if (!check.rows.length) {
             return res.status(404).json({ status: 'error', message: 'Product not found' });
         }
-        await pool.execute(`UPDATE products SET category_id = ?, name = ?, description = ?, price = ?, stock_quantity = ? WHERE id = ?`, [category_id, name.trim(), description.trim(), price, stock_quantity, productId]);
+        await pool.query(`UPDATE products SET category_id = $1, product_name = $2, description = $3, price = $4, stock_quantity = $5 WHERE id = $6`, [category_id, product_name.trim(), description.trim(), price, stock_quantity, productId]);
         return res.status(200).json({ status: 'success', message: 'Product updated successfully' });
     }
     catch (error) {
@@ -50,11 +50,11 @@ async function deleteProduct(req, res) {
         //     return res.status(403).json({ status: 'error', message: 'Access denied' });
         // }
         const productId = req.params.id;
-        const [rows] = await pool.execute(`SELECT * FROM products WHERE id = ?`, [productId]);
-        if (!rows.length) {
+        const check = await pool.query(`SELECT * FROM products WHERE id = $1`, [productId]);
+        if (!check.rows.length) {
             return res.status(404).json({ status: 'error', message: 'Product not found' });
         }
-        await pool.execute(`DELETE FROM products WHERE id = ?`, [productId]);
+        await pool.query(`DELETE FROM products WHERE id = $1`, [productId]);
         return res.status(200).json({ status: 'success', message: 'Product deleted successfully' });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
@@ -64,7 +64,7 @@ async function deleteProduct(req, res) {
 // lấy danh sách sản phẩm
 async function getProducts(req, res) {
     try {
-        const [rows] = await pool.execute(`
+        const result = await pool.query(`
             SELECT p.*, c.category_name 
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
@@ -72,7 +72,7 @@ async function getProducts(req, res) {
 
         return res.status(200).json({
             status: 'success',
-            data: rows
+            data: result.rows
         });
     } catch (error) {
         return res.status(500).json({
@@ -87,14 +87,14 @@ async function getProductById(req, res) {
     try {
         const productId = req.params.id;
 
-        const [rows] = await pool.execute(`
+        const result = await pool.query(`
             SELECT p.*, c.category_name
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
-            WHERE p.id = ?
+            WHERE p.id = $1
         `, [productId]);
 
-        if (!rows.length) {
+        if (!result.rows.length) {
             return res.status(404).json({
                 status: 'error',
                 message: 'Product not found'
@@ -103,7 +103,7 @@ async function getProductById(req, res) {
 
         return res.status(200).json({
             status: 'success',
-            data: rows[0]
+            data: result.rows[0]
         });
 
     } catch (error) {
@@ -128,20 +128,20 @@ async function updateStock(req, res) {
             });
         }
 
-        const [rows] = await pool.execute(
-            `SELECT * FROM products WHERE id = ?`,
+        const check = await pool.query(
+            `SELECT * FROM products WHERE id = $1`,
             [productId]
         );
 
-        if (!rows.length) {
+        if (!check.rows.length) {
             return res.status(404).json({
                 status: 'error',
                 message: 'Product not found'
             });
         }
 
-        await pool.execute(
-            `UPDATE products SET stock_quantity = ? WHERE id = ?`,
+        await pool.query(
+            `UPDATE products SET stock_quantity = $1 WHERE id = $2`,
             [stock_quantity, productId]
         );
 

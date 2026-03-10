@@ -1,23 +1,24 @@
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT) || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'theliemsshoes',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+// Sử dụng DATABASE_URL từ environment variable (Render sẽ tự set)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Required cho Render PostgreSQL
+  },
+  max: 10, // Maximum pool size
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
-pool.getConnection()
-  .then(connection => {
-    console.log('Kết nối cơ sở dữ liệu thành công');
-    connection.release();
+// Test connection
+pool.connect()
+  .then(client => {
+    console.log('✓ Kết nối PostgreSQL database thành công!');
+    client.release();
   })
   .catch(err => {
-    console.error('Lỗi kết nối cơ sở dữ liệu:', err);
+    console.error('✗ Lỗi kết nối PostgreSQL database:', err.message);
   });
 
 module.exports = pool;
