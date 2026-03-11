@@ -19,6 +19,23 @@ async function getListUsers(req,res) {
     }
 }
 
+// Lấy thông tin tài khoản theo id
+async function getUserById(req, res) {
+    try {
+        // if (!isAdmin(req)) {
+        //     return res.status(403).json({status: 'error',message:'Access denied'});
+        // }
+        const userId = req.params.id;
+        const result = await pool.query(`SELECT id, username, email, role, phone_number FROM users WHERE id = $1`, [userId]);
+        if (!result.rows.length) {
+            return res.status(404).json({status: 'error', message: 'User not found'});
+        }
+        return res.status(200).json({status: 'success', data: result.rows[0]});
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error.message });
+    }
+}
+
 // Thêm tài khoản
 async function addUser(req, res){
     try {
@@ -86,6 +103,7 @@ async function deleteUser(req, res){
 
 module.exports = {
     getListUsers,
+    getUserById,
     addUser,
     updateUser,
     deleteUser

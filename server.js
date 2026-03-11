@@ -24,9 +24,9 @@ const userRoutes = require('./routes/users');
 const productRoutes = require('./routes/products');
 
 // ===== API ROUTES =====
-// Ví dụ: app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/products', productRoutes);
+// Ví dụ: app.use('/auth', authRoutes);
+app.use('/users', userRoutes);
+app.use('/products', productRoutes);
 
 
 // ===== HEALTH CHECK =====
