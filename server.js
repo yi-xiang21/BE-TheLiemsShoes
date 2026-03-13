@@ -6,6 +6,7 @@ require("dotenv").config();
 // ===== CORS ===== cho phep frontend truy cap backend
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
@@ -30,6 +31,13 @@ app.use('/products', productRoutes);
 
 
 // ===== HEALTH CHECK =====
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'BE-TheLiemsShoes API is running'
+  });
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'success',
@@ -47,8 +55,8 @@ app.use((req, res) => {
 });
 
 // ===== START SERVER =====
-app.listen(PORT, () => {
-  console.log(`Server đang chạy tại http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Server đang chạy tại http://${HOST}:${PORT}`);
 });
 
 module.exports = app;
