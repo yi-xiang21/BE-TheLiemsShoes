@@ -20,15 +20,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ===== ROUTES =====
-// Ví dụ: const authRoutes = require('./routes/auth');
+const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const productRoutes = require('./routes/products');
 
 // ===== API ROUTES =====
-// Ví dụ: app.use('/auth', authRoutes);
+app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/products', productRoutes);
-
 
 // ===== HEALTH CHECK =====
 app.get('/', (req, res) => {
