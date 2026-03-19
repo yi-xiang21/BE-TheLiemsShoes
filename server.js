@@ -23,11 +23,13 @@ app.use(express.urlencoded({ extended: true }));
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const productRoutes = require('./routes/products');
+const categoryRoutes = require('./routes/categories');
 
 // ===== API ROUTES =====
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/products', productRoutes);
+app.use('/categories', categoryRoutes);
 
 // ===== HEALTH CHECK =====
 app.get('/', (req, res) => {
