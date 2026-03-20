@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { addProduct, updateProduct, deleteProduct, getProducts, getProductById, updateStock } = require('../controllers/productController');
+const { uploadProductImages, addProduct, updateProduct, deleteProduct, getProducts, getProductById, updateStock } = require('../controllers/productController');
 
 //Các method
-router.post('/', addProduct);
-router.put('/:id', updateProduct);
+router.post('/', uploadProductImages, addProduct);
+router.put('/:id', uploadProductImages, updateProduct);
 router.delete('/:id', deleteProduct);
 router.get('/', getProducts);
 router.get('/:id', getProductById);
