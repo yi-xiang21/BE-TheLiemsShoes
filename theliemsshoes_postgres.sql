@@ -29,6 +29,12 @@ CREATE TABLE categories (
   description TEXT
 );
 
+CREATE TABLE product_type (
+  id SERIAL PRIMARY KEY,
+  category_name VARCHAR(100) NOT NULL,
+  description TEXT
+);
+
 CREATE TABLE products (
   id SERIAL PRIMARY KEY,
   category_id INTEGER,
