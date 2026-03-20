@@ -149,7 +149,17 @@ const login = async (req, res) => {
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
         );
-        res.status(200).json({ message: 'Login successful.', token });
+        res.status(200).json({
+            message: 'Login successful.',
+            token,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                phone_number: user.phone_number
+            }
+        });
     } catch (error) {
         console.error('Login error:', error.message);
         res.status(500).json({ message: 'Internal server error.' });
