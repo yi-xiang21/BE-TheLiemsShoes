@@ -2,6 +2,14 @@ const pool = require('../config/db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
+function getJwtConfigError() {
+    if (!process.env.JWT_SECRET || !process.env.JWT_SECRET.trim()) {
+        return 'Server configuration error: JWT_SECRET is missing.';
+    }
+
+    return null;
+}
+
 function getUserFromAuthHeader(req) {
     const authHeader = req.headers.authorization;
 
@@ -10,6 +18,11 @@ function getUserFromAuthHeader(req) {
     }
 
     const token = authHeader.split(' ')[1];
+
+    const jwtConfigError = getJwtConfigError();
+    if (jwtConfigError) {
+        return { error: jwtConfigError };
+    }
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -116,9 +129,18 @@ const login = async (req, res) => {
 
         // So sánh mật khẩu đã nhập với mật khẩu đã mã hóa trong cơ sở dữ liệu
         const user = userResult.rows[0];
+        if (!user.password) {
+            return res.status(400).json({ message: 'Account password data is invalid. Please reset password.' });
+        }
+
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             return res.status(400).json({ message: 'Incorrect password.' });
+        }
+
+        const jwtConfigError = getJwtConfigError();
+        if (jwtConfigError) {
+            return res.status(500).json({ message: jwtConfigError });
         }
 
         // Tạo token JWT
@@ -129,6 +151,7 @@ const login = async (req, res) => {
         );
         res.status(200).json({ message: 'Login successful.', token });
     } catch (error) {
+        console.error('Login error:', error.message);
         res.status(500).json({ message: 'Internal server error.' });
     }
 };
