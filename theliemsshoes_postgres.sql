@@ -38,6 +38,7 @@ CREATE TABLE product_type (
 CREATE TABLE products (
   id SERIAL PRIMARY KEY,
   category_id INTEGER,
+  product_type_id INTEGER,
   product_name VARCHAR(200) NOT NULL,
   description TEXT,
   price DECIMAL(10,2) NOT NULL,
