@@ -30,12 +30,14 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const productRoutes = require('./routes/products');
 const categoryRoutes = require('./routes/categories');
+const cartRoutes = require('./routes/cart');
 
 // ===== API ROUTES =====
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/products', productRoutes);
 app.use('/categories', categoryRoutes);
+app.use('/cart', cartRoutes);
 
 // ===== HEALTH CHECK =====
 app.get('/', (req, res) => {
