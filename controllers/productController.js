@@ -307,6 +307,25 @@ async function updateStock(req, res) {
     }
 }
 
+// Lấy danh sách loại sản phẩm
+async function getProductTypes(req, res) {
+    try {
+        const result = await pool.query(
+            `SELECT * FROM product_type ORDER BY id ASC`
+        );
+
+        return res.status(200).json({
+            status: 'success',
+            data: result.rows
+        });
+    } catch (error) {
+        return res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+}
+
 module.exports = {
     uploadProductImages,
     addProduct,
@@ -314,5 +333,6 @@ module.exports = {
     deleteProduct,
     getProducts,
     getProductById,
-    updateStock
+    updateStock,
+    getProductTypes
 }

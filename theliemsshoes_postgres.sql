@@ -32,7 +32,7 @@ CREATE TABLE categories (
 
 CREATE TABLE product_type (
   id SERIAL PRIMARY KEY,
-  category_name VARCHAR(100) NOT NULL,
+  type_name VARCHAR(100) NOT NULL,
   description TEXT
 );
 
