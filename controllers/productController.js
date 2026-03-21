@@ -130,6 +130,62 @@ async function updateProduct(req, res) {
              WHERE id = $7`,
             [category_id, product_type_id || null, product_name.trim(), description.trim(), price, normalizedStock, productId]
         );
+        // cap nhat hinh anh: xoa hinh cu va them hinh moi
+
+        const rawImageUrls = req.body.image_urls;
+        if (rawImageUrls !== undefined) {
+            let submittedImageUrls = [];
+
+            if (Array.isArray(rawImageUrls)) {
+                submittedImageUrls = rawImageUrls;
+            } else if (typeof rawImageUrls === 'string') {
+                try {
+                    const parsed = JSON.parse(rawImageUrls);
+                    submittedImageUrls = Array.isArray(parsed) ? parsed : [];
+                } catch (_parseError) {
+                    submittedImageUrls = [];
+                }
+            }
+
+            const normalizedSubmittedUrls = submittedImageUrls
+                .map((url) => String(url || '').trim())
+                .filter(Boolean);
+
+            const currentImageRows = await pool.query(
+                `SELECT id, image_url FROM product_images WHERE product_id = $1`,
+                [productId]
+            );
+
+            const submittedSet = new Set(normalizedSubmittedUrls);
+
+            for (const imageRow of currentImageRows.rows) {
+                if (!submittedSet.has(imageRow.image_url)) {
+                    await pool.query(
+                        `DELETE FROM product_images WHERE id = $1 AND product_id = $2`,
+                        [imageRow.id, productId]
+                    );
+
+                    if (String(imageRow.image_url || '').startsWith('/uploads/')) {
+                        const fileName = path.basename(imageRow.image_url);
+                        const filePath = path.join(uploadDir, fileName);
+                        if (fs.existsSync(filePath)) {
+                            fs.unlinkSync(filePath);
+                        }
+                    }
+                }
+            }
+
+            const currentUrlSet = new Set(currentImageRows.rows.map((row) => row.image_url));
+            for (const imageUrl of normalizedSubmittedUrls) {
+                if (!currentUrlSet.has(imageUrl)) {
+                    await pool.query(
+                        `INSERT INTO product_images (product_id, image_url) VALUES ($1, $2)`,
+                        [productId, imageUrl]
+                    );
+                }
+            }
+        }
+        // ket thuc cap nhat hinh anh
 
         const files = Array.isArray(req.files) ? req.files : [];
         for (const file of files) {
