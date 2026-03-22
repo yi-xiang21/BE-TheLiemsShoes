@@ -42,9 +42,9 @@ function isAdmin(req) {
 // Thêm sản phẩm
 async function addProduct(req, res) {
     try {
-        // if (!isAdmin(req)) {
-        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
-        // }
+        if (!isAdmin(req)) {
+            return res.status(403).json({ status: 'error', message: 'Access denied' });
+        }
         const { product_name, price, description, category_id, product_type_id, stock_quantity } = req.body;
         if (!product_name || !price || !description || !category_id) {
             return res.status(400).json({ status: 'error', message: 'Missing required fields' });
@@ -98,9 +98,9 @@ async function addProduct(req, res) {
 // Sửa sản phẩm
 async function updateProduct(req, res) {
     try {
-        // if (!isAdmin(req)) {
-        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
-        // }
+        if (!isAdmin(req)) {
+            return res.status(403).json({ status: 'error', message: 'Access denied' });
+        }
         const productId = req.params.id;
         const { product_name, price, description, category_id, product_type_id, stock_quantity } = req.body;
         // Kiểm tra xem sản phẩm có tồn tại hay không
@@ -130,8 +130,7 @@ async function updateProduct(req, res) {
              WHERE id = $7`,
             [category_id, product_type_id || null, product_name.trim(), description.trim(), price, normalizedStock, productId]
         );
-        // cap nhat hinh anh: xoa hinh cu va them hinh moi
-
+        // Cập nhật hình ảnh: Xử lý xóa hình ảnh cũ không còn trong danh sách mới và thêm hình ảnh mới
         const rawImageUrls = req.body.image_urls;
         if (rawImageUrls !== undefined) {
             let submittedImageUrls = [];
@@ -185,7 +184,7 @@ async function updateProduct(req, res) {
                 }
             }
         }
-        // ket thuc cap nhat hinh anh
+        // Kết thúc cập nhật hình ảnh
 
         const files = Array.isArray(req.files) ? req.files : [];
         for (const file of files) {
@@ -214,9 +213,9 @@ async function updateProduct(req, res) {
 // Xóa sản phẩm
 async function deleteProduct(req, res) {
     try {
-        // if (!isAdmin(req)) {
-        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
-        // }
+        if (!isAdmin(req)) {
+            return res.status(403).json({ status: 'error', message: 'Access denied' });
+        }
         const productId = req.params.id;
         const check = await pool.query(`SELECT * FROM products WHERE id = $1`, [productId]);
         if (!check.rows.length) {
