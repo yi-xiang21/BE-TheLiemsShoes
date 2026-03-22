@@ -3,6 +3,38 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 
+const mimeToExt = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'image/bmp': '.bmp'
+};
+
+function normalizeUploadFileName(originalName, mimeType) {
+    const rawName = (originalName || 'image').trim();
+    const detectedExt = path.extname(rawName).toLowerCase();
+    let baseName = path.basename(rawName, detectedExt);
+
+    if (detectedExt) {
+        const escapedExt = detectedExt.replace('.', '\\.') ;
+        const trailingExtRegex = new RegExp(`(${escapedExt})+$`, 'i');
+        baseName = baseName.replace(trailingExtRegex, '');
+    }
+
+    const cleanBaseName = baseName
+        .replace(/[^a-zA-Z0-9-_]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40) || 'image';
+
+    return {
+        baseName: cleanBaseName,
+        ext: detectedExt || mimeToExt[mimeType] || ''
+    };
+}
+
 const uploadDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -13,11 +45,8 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (_req, file, cb) => {
-        const ext = path.extname(file.originalname || '');
-        const baseName = path.basename(file.originalname || 'image', ext)
-            .replace(/[^a-zA-Z0-9-_]/g, '_')
-            .slice(0, 40);
-        cb(null, `${Date.now()}-${baseName || 'image'}${ext}`);
+        const { baseName, ext } = normalizeUploadFileName(file.originalname, file.mimetype);
+        cb(null, `${Date.now()}-${baseName}${ext}`);
     }
 });
 
