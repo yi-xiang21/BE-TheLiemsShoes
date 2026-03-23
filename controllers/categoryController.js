@@ -34,10 +34,33 @@ async function getCategoryById(req, res) {
 async function getProductByCategory(req, res) {
     try {
         const categoryId = Number(req.params.id);
-    const result = await pool.query(`
-            SELECT * FROM products
-            WHERE product_type_id = $1
-        `, [productTypeId]);
+
+        if (!Number.isInteger(categoryId) || categoryId <= 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid category id'
+            });
+        }
+
+        const result = await pool.query(`
+            SELECT
+                p.*,
+                c.category_name,
+                COALESCE(
+                    json_agg(
+                        json_build_object('id', pi.id, 'image_url', pi.image_url)
+                        ORDER BY pi.id
+                    ) FILTER (WHERE pi.id IS NOT NULL),
+                    '[]'::json
+                ) AS images
+            FROM products p
+            LEFT JOIN categories c ON p.category_id = c.id
+            LEFT JOIN product_images pi ON pi.product_id = p.id
+            WHERE p.category_id = $1
+            GROUP BY p.id, c.category_name
+            ORDER BY p.id DESC
+        `, [categoryId]);
+
         return res.status(200).json({ status: 'success', data: result.rows });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: error.message });
