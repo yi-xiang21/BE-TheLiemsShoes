@@ -33,9 +33,9 @@ async function getCategoryById(req, res) {
 // Thêm danh mục
 async function addCategory(req, res) {
     try {
-        if (!isAdmin(req)) {
-            return res.status(403).json({ status: 'error', message: 'Access denied' });
-        }
+        // if (!isAdmin(req)) {
+        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
+        // }
 
         const { category_name, description } = req.body;
 
@@ -61,9 +61,9 @@ async function addCategory(req, res) {
 // Sửa danh mục
 async function updateCategory(req, res) {
     try {
-        if (!isAdmin(req)) {
-            return res.status(403).json({ status: 'error', message: 'Access denied' });
-        }
+        // if (!isAdmin(req)) {
+        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
+        // }
 
         const categoryId = req.params.id;
         const { category_name, description } = req.body;
@@ -91,9 +91,9 @@ async function updateCategory(req, res) {
 // Xóa danh mục
 async function deleteCategory(req, res) {
     try {
-        if (!isAdmin(req)) {
-            return res.status(403).json({ status: 'error', message: 'Access denied' });
-        }
+        // if (!isAdmin(req)) {
+        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
+        // }
 
         const categoryId = req.params.id;
         const check = await pool.query('SELECT 1 FROM categories WHERE id = $1', [categoryId]);
