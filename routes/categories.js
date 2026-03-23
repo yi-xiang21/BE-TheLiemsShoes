@@ -6,7 +6,8 @@ const {
     getCategoryById,
     addCategory,
     updateCategory,
-    deleteCategory
+    deleteCategory,
+    getProductByCategory
 } = require('../controllers/categoryController');
 
 // Các method
@@ -15,5 +16,6 @@ router.get('/:id', getCategoryById);
 router.post('/', authenticateToken, requireAdmin, addCategory);
 router.put('/:id', authenticateToken, requireAdmin, updateCategory);
 router.delete('/:id', authenticateToken, requireAdmin, deleteCategory);
+router.get('/category/:id', getProductByCategory);
 
 module.exports = router;
