@@ -30,6 +30,20 @@ async function getCategoryById(req, res) {
     }
 }
 
+// Lấy sản phẩm theo danh mục
+async function getProductByCategory(req, res) {
+    try {
+        const categoryId = Number(req.params.id);
+    const result = await pool.query(`
+            SELECT * FROM products
+            WHERE product_type_id = $1
+        `, [productTypeId]);
+        return res.status(200).json({ status: 'success', data: result.rows });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error.message });
+    }
+}
+
 // Thêm danh mục
 async function addCategory(req, res) {
     try {
@@ -113,5 +127,6 @@ module.exports = {
     getCategoryById,
     addCategory,
     updateCategory,
-    deleteCategory
+    deleteCategory,
+    getProductByCategory
 };
