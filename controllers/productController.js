@@ -71,9 +71,9 @@ function isAdmin(req) {
 // Thêm sản phẩm
 async function addProduct(req, res) {
     try {
-        // if (!isAdmin(req)) {
-        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
-        // }
+        if (!isAdmin(req)) {
+            return res.status(403).json({ status: 'error', message: 'Access denied' });
+        }
         const { product_name, price, description, category_id, product_type_id, stock_quantity } = req.body;
         if (!product_name || !price || !description || !category_id) {
             return res.status(400).json({ status: 'error', message: 'Missing required fields' });
@@ -127,9 +127,9 @@ async function addProduct(req, res) {
 // Sửa sản phẩm
 async function updateProduct(req, res) {
     try {
-        // if (!isAdmin(req)) {
-        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
-        // }
+        if (!isAdmin(req)) {
+            return res.status(403).json({ status: 'error', message: 'Access denied' });
+        }
         const productId = req.params.id;
         const { product_name, price, description, category_id, product_type_id, stock_quantity } = req.body;
         // Kiểm tra xem sản phẩm có tồn tại hay không
@@ -242,9 +242,9 @@ async function updateProduct(req, res) {
 // Xóa sản phẩm
 async function deleteProduct(req, res) {
     try {
-        // if (!isAdmin(req)) {
-        //     return res.status(403).json({ status: 'error', message: 'Access denied' });
-        // }
+        if (!isAdmin(req)) {
+            return res.status(403).json({ status: 'error', message: 'Access denied' });
+        }
         const productId = req.params.id;
         const check = await pool.query(`SELECT * FROM products WHERE id = $1`, [productId]);
         if (!check.rows.length) {

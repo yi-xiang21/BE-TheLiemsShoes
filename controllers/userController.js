@@ -9,9 +9,9 @@ function isAdmin(req) {
 // Lấy danh sách tài khoản
 async function getListUsers(req,res) {
     try {
-        // if (!isAdmin(req)) {
-        //     return res.status(403).json({status: 'error',message:'Access denied'});
-        // }
+        if (!isAdmin(req)) {
+            return res.status(403).json({status: 'error',message:'Access denied'});
+        }
         const result = await pool.query(`SELECT id, username, email, role, phone_number FROM users ORDER BY id DESC`);
         return res.status(200).json({status: 'success', data: result.rows});
     } catch (error) {
@@ -22,9 +22,9 @@ async function getListUsers(req,res) {
 // Lấy thông tin tài khoản theo id
 async function getUserById(req, res) {
     try {
-        // if (!isAdmin(req)) {
-        //     return res.status(403).json({status: 'error',message:'Access denied'});
-        // }
+        if (!isAdmin(req)) {
+            return res.status(403).json({status: 'error',message:'Access denied'});
+        }
         const userId = req.params.id;
         const result = await pool.query(`SELECT id, username, email, role, phone_number FROM users WHERE id = $1`, [userId]);
         if (!result.rows.length) {
@@ -39,9 +39,9 @@ async function getUserById(req, res) {
 // Thêm tài khoản
 async function addUser(req, res){
     try {
-        // if(!isAdmin(req)){
-        //     return res.status(403).json({status: 'error', message: 'Access denied'});
-        // }
+        if (!isAdmin(req)){
+            return res.status(403).json({status: 'error', message: 'Access denied'});
+        }
         const { username, email, password, role, phone_number } = req.body;
         if(!username || !email || !password || !role){
             return res.status(400).json({status: 'error', message: 'Missing required fields'});
@@ -61,9 +61,9 @@ async function addUser(req, res){
 // Sửa tài khoản
 async function updateUser(req, res){
     try {
-        // if(!isAdmin(req)){
-        //     return res.status(403).json({status: 'error', message: 'Access denied'});
-        // }
+        if (!isAdmin(req)){
+            return res.status(403).json({status: 'error', message: 'Access denied'});
+        }
         const userId = req.params.id;
         const{username, email, role, phone_number} = req.body;
         // Kiểm tra xem tài khoản có tồn tại hay không
@@ -90,9 +90,9 @@ async function updateUser(req, res){
 // Xóa tài khoản
 async function deleteUser(req, res){
     try {
-        // if(!isAdmin(req)){
-        //     return res.status(403).json({status: 'error', message: 'Access denied'});
-        // }
+        if (!isAdmin(req)){
+            return res.status(403).json({status: 'error', message: 'Access denied'});
+        }
         const userId = req.params.id;
         await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
         return res.status(200).json({status: 'success', message: 'User deleted successfully'});
