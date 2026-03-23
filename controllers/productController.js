@@ -410,28 +410,21 @@ async function getProductTypes(req, res) {
     }
 }
 
-// lấy sản phẩm theo loại 
+// Lấy sản phẩm theo loại
 async function getProductsByType(req, res) {
     try {
-        const productTypeId = req.params.typeId;
+        const productTypeId = Number(req.params.type);
+
+        if (!Number.isInteger(productTypeId) || productTypeId <= 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid product type id'
+            });
+        }
 
         const result = await pool.query(`
-            SELECT
-                p.*,
-                c.category_name,
-                COALESCE(
-                    json_agg(
-                        json_build_object('id', pi.id, 'image_url', pi.image_url)
-                        ORDER BY pi.id
-                    ) FILTER (WHERE pi.id IS NOT NULL),
-                    '[]'::json
-                ) AS images
-            FROM products p
-            LEFT JOIN categories c ON p.category_id = c.id
-            LEFT JOIN product_images pi ON pi.product_id = p.id
-            WHERE p.product_type_id = $1
-            GROUP BY p.id, c.category_name
-            ORDER BY p.id DESC
+            SELECT * FROM products
+            WHERE product_type_id = $1
         `, [productTypeId]);
 
         return res.status(200).json({
