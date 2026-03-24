@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { uploadProductImages, addProduct, updateProduct, deleteProduct, getProducts, getProductById, updateStock, getProductTypes, getProductsByType, getProductsBySize } = require('../controllers/productController');
+const { uploadProductImages, addProduct, updateProduct, deleteProduct, getProducts, getProductById, updateStock, getProductTypes, getProductsByType, getProductsBySize, filterProductsByPrice } = require('../controllers/productController');
 const { authenticateToken, requireAdmin } = require('../middleware/authMiddleware');
 
 //Các method
@@ -13,6 +13,6 @@ router.get('/type/:type', getProductsByType);
 router.get('/:id', getProductById);
 router.put('/:id/stock', authenticateToken, requireAdmin, updateStock);
 router.get('/size/:size', getProductsBySize);
-
+router.get('/price', filterProductsByPrice);
 
 module.exports = router;

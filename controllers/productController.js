@@ -733,6 +733,50 @@ async function getProductsBySize(req, res) {
     }
 }
 
+// lấy sản phẩm theo khoảng giá
+async function filterProductsByPrice(req, res) {
+    try{
+         const minPrice = req.query.min !== undefined ? Number(req.query.min) : null;
+        const maxPrice = req.query.max !== undefined ? Number(req.query.max) : null;
+
+        if ((minPrice !== null && (!Number.isFinite(minPrice) || minPrice < 0)) ||
+            (maxPrice !== null && (!Number.isFinite(maxPrice) || maxPrice < 0))) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'min and max price must be non-negative numbers'
+                });
+            }
+
+            const conditions = [];
+            const values = [];
+
+            if(minPrice != null){
+                values.push(minPrice);
+                conditions.push(`p.price >= $${values.length}`);
+            }
+
+             if(maxPrice != null){
+                values.push(maxPrice);
+                conditions.push(`p.price <= $${values.length}`);
+            }
+
+            const query = `
+            SELECT p.* FROM products p
+            ${whereClause}`;
+
+            const result = await pool.query (query, values);
+            
+             return res.json({
+                status: 'success',
+                data: result.rows
+             });
+    }catch (error) {
+        return res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+}
 
 
 module.exports = {
@@ -745,5 +789,6 @@ module.exports = {
     updateStock,
     getProductTypes,
     getProductsByType,
-    getProductsBySize
+    getProductsBySize,
+    filterProductsByPrice
 }
