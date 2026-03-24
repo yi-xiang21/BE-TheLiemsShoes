@@ -665,6 +665,75 @@ async function getProductsByType(req, res) {
     }
 }
 
+// lấy danh sách sản phẩm theo size
+async function getProductsBySize(req, res) {
+    try{
+        const sizeId = Number(req.params.size);
+
+        if (!Number.isInteger(sizeId) || sizeId <= 0){
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid size id'
+            });
+        }
+        const result = await pool.query(`
+           SELECT
+                p.*,
+                c.category_name,
+                pt.type_name AS product_type_name,
+                COALESCE(stock.total_stock, 0) AS stock_quantity,
+                COALESCE(img.images, '[]'::json) AS images,
+                COALESCE(sz.sizes, '[]'::json) AS sizes
+            FROM products p
+            LEFT JOIN categories c ON p.category_id = c.id
+            LEFT JOIN product_type pt ON p.product_type_id = pt.id
+            LEFT JOIN LATERAL (
+                SELECT SUM(ps.stock_quantity)::int AS total_stock
+                FROM product_sizes ps
+                WHERE ps.product_id = p.id
+            ) stock ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object('id', pi.id, 'image_url', pi.image_url)
+                    ORDER BY pi.id
+                ) AS images
+                FROM product_images pi
+                WHERE pi.product_id = p.id
+            ) img ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object(
+                        'product_size_id', ps.id,
+                        'size_id', s.id,
+                        'size_name', s.size_name,
+                        'stock_quantity', ps.stock_quantity
+                    )
+                    ORDER BY s.id
+                ) AS sizes
+                FROM product_sizes ps
+                JOIN sizes s ON s.id = ps.size_id
+                WHERE ps.product_id = p.id
+            ) sz ON true
+            WHERE EXISTS (
+                SELECT 1 FROM product_sizes ps2
+                WHERE ps2.product_id = p.id AND ps2.size_id = $1 AND ps2.stock_quantity > 0
+            )
+            ORDER BY p.id DESC
+        `, [sizeId]);
+
+        return res.status(200).json({
+            status: 'success',
+            data: result.rows
+        });
+    } catch (error) {
+        return res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+}
+
+
 
 module.exports = {
     uploadProductImages,
@@ -675,5 +744,6 @@ module.exports = {
     getProductById,
     updateStock,
     getProductTypes,
-    getProductsByType
+    getProductsByType,
+    getProductsBySize
 }
