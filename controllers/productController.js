@@ -778,6 +778,32 @@ async function filterProductsByPrice(req, res) {
     }
 }
 
+// lấy sản phẩm theo sắp xếp tăng giảm
+async function sortProducts(req, res) {
+    try{
+        const sort = req.query.sort || "desc";
+
+        let orderBy = 'p.id DESC';
+        if (sort == 'asc') orderBy = "ASC";
+        if (sort == 'desc') orderBy = "DESC";
+
+        const query = ` SELECT p* FROM products p
+                        ORDER BY p.price ${orderBy}`;
+        
+        const result = await pool.query(query);
+
+        return res.json({
+            status: 'success',
+            data: result.rows
+        });
+    }catch (error) {
+        return res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+}
+
 
 module.exports = {
     uploadProductImages,
@@ -790,5 +816,6 @@ module.exports = {
     getProductTypes,
     getProductsByType,
     getProductsBySize,
-    filterProductsByPrice
+    filterProductsByPrice,
+    sortProducts
 }
