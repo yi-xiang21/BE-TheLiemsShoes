@@ -68,6 +68,89 @@ function isAdmin(req) {
     return req.user && req.user.role === 'admin';
 }
 
+function toNonNegativeInt(value, fallback = 0) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        return fallback;
+    }
+
+    return Math.floor(parsed);
+}
+
+function parseSizeStocks(rawValue) {
+    if (rawValue === undefined || rawValue === null) {
+        return null;
+    }
+
+    let value = rawValue;
+
+    if (typeof rawValue === 'string') {
+        try {
+            value = JSON.parse(rawValue);
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    return value
+        .map((item) => ({
+            size_id: item?.size_id !== undefined && item?.size_id !== null ? Number(item.size_id) : null,
+            size_name: item?.size_name ? String(item.size_name).trim() : null,
+            stock_quantity: toNonNegativeInt(item?.stock_quantity, 0)
+        }))
+        .filter((item) => (Number.isInteger(item.size_id) && item.size_id > 0) || (item.size_name && item.size_name.length > 0));
+}
+
+async function resolveSizeId(client, sizeId, sizeName) {
+    if (Number.isInteger(sizeId) && sizeId > 0) {
+        const sizeResult = await client.query('SELECT id FROM sizes WHERE id = $1', [sizeId]);
+        if (!sizeResult.rows.length) {
+            throw new Error(`Size with id ${sizeId} not found`);
+        }
+
+        return sizeId;
+    }
+
+    const normalizedSizeName = String(sizeName || '').trim();
+    if (!normalizedSizeName) {
+        throw new Error('Size identifier is required');
+    }
+
+    const upsertResult = await client.query(
+        `INSERT INTO sizes (size_name)
+         VALUES ($1)
+         ON CONFLICT (size_name)
+         DO UPDATE SET size_name = EXCLUDED.size_name
+         RETURNING id`,
+        [normalizedSizeName]
+    );
+
+    return upsertResult.rows[0].id;
+}
+
+async function upsertProductSizes(client, productId, sizeStocks) {
+    await client.query('DELETE FROM product_sizes WHERE product_id = $1', [productId]);
+
+    const mergedBySizeId = new Map();
+    for (const item of sizeStocks) {
+        const resolvedSizeId = await resolveSizeId(client, item.size_id, item.size_name);
+        const currentStock = mergedBySizeId.get(resolvedSizeId) || 0;
+        mergedBySizeId.set(resolvedSizeId, currentStock + toNonNegativeInt(item.stock_quantity, 0));
+    }
+
+    for (const [resolvedSizeId, stockQuantity] of mergedBySizeId.entries()) {
+        await client.query(
+            `INSERT INTO product_sizes (product_id, size_id, stock_quantity)
+             VALUES ($1, $2, $3)`,
+            [productId, resolvedSizeId, stockQuantity]
+        );
+    }
+}
+
 // Thêm sản phẩm
 async function addProduct(req, res) {
     try {
@@ -79,20 +162,26 @@ async function addProduct(req, res) {
             return res.status(400).json({ status: 'error', message: 'Missing required fields' });
         }
 
-        const normalizedStock = stock_quantity === undefined || stock_quantity === null || stock_quantity === ''
-            ? 0
-            : Number(stock_quantity);
+        const parsedSizeStocks = parseSizeStocks(req.body.size_stocks || req.body.product_sizes);
+
+        const fallbackStock = toNonNegativeInt(stock_quantity, 0);
+        const effectiveSizeStocks = parsedSizeStocks && parsedSizeStocks.length
+            ? parsedSizeStocks
+            : [{ size_name: '40', stock_quantity: fallbackStock }];
 
         await pool.query('BEGIN');
 
         const result = await pool.query(
-            `INSERT INTO products (category_id, product_type_id, product_name, description, price, stock_quantity)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            `INSERT INTO products (category_id, product_type_id, product_name, description, price)
+             VALUES ($1, $2, $3, $4, $5)
              RETURNING id`,
-            [category_id, product_type_id || null, product_name.trim(), description.trim(), price, normalizedStock]
+            [category_id, product_type_id || null, product_name.trim(), description.trim(), price]
         );
 
         const productId = result.rows[0].id;
+
+        await upsertProductSizes(pool, productId, effectiveSizeStocks);
+
         const files = Array.isArray(req.files) ? req.files : [];
 
         for (const file of files) {
@@ -142,9 +231,8 @@ async function updateProduct(req, res) {
             return res.status(400).json({ status: 'error', message: 'Missing required fields' });
         }
 
-        const normalizedStock = stock_quantity === undefined || stock_quantity === null || stock_quantity === ''
-            ? 0
-            : Number(stock_quantity);
+        const parsedSizeStocks = parseSizeStocks(req.body.size_stocks || req.body.product_sizes);
+        const shouldUpdateSizeStocks = Boolean(parsedSizeStocks);
 
         await pool.query('BEGIN');
 
@@ -154,11 +242,24 @@ async function updateProduct(req, res) {
                  product_type_id = $2,
                  product_name = $3,
                  description = $4,
-                 price = $5,
-                 stock_quantity = $6
-             WHERE id = $7`,
-            [category_id, product_type_id || null, product_name.trim(), description.trim(), price, normalizedStock, productId]
+                 price = $5
+             WHERE id = $6`,
+            [category_id, product_type_id || null, product_name.trim(), description.trim(), price, productId]
         );
+
+        if (shouldUpdateSizeStocks) {
+            await upsertProductSizes(pool, productId, parsedSizeStocks);
+        } else if (stock_quantity !== undefined && stock_quantity !== null && stock_quantity !== '') {
+            const defaultSizeId = await resolveSizeId(pool, null, '40');
+            const normalizedStock = toNonNegativeInt(stock_quantity, 0);
+            await pool.query(
+                `INSERT INTO product_sizes (product_id, size_id, stock_quantity)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (product_id, size_id)
+                 DO UPDATE SET stock_quantity = EXCLUDED.stock_quantity`,
+                [productId, defaultSizeId, normalizedStock]
+            );
+        }
         // Cập nhật hình ảnh: Xử lý xóa hình ảnh cũ không còn trong danh sách mới và thêm hình ảnh mới
         const rawImageUrls = req.body.image_urls;
         if (rawImageUrls !== undefined) {
@@ -278,17 +379,40 @@ async function getProducts(req, res) {
             SELECT
                 p.*,
                 c.category_name,
-                COALESCE(
-                    json_agg(
-                        json_build_object('id', pi.id, 'image_url', pi.image_url)
-                        ORDER BY pi.id
-                    ) FILTER (WHERE pi.id IS NOT NULL),
-                    '[]'::json
-                ) AS images
+                pt.type_name AS product_type_name,
+                COALESCE(stock.total_stock, 0) AS stock_quantity,
+                COALESCE(img.images, '[]'::json) AS images,
+                COALESCE(sz.sizes, '[]'::json) AS sizes
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
-            LEFT JOIN product_images pi ON pi.product_id = p.id
-            GROUP BY p.id, c.category_name
+            LEFT JOIN product_type pt ON p.product_type_id = pt.id
+            LEFT JOIN LATERAL (
+                SELECT SUM(ps.stock_quantity)::int AS total_stock
+                FROM product_sizes ps
+                WHERE ps.product_id = p.id
+            ) stock ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object('id', pi.id, 'image_url', pi.image_url)
+                    ORDER BY pi.id
+                ) AS images
+                FROM product_images pi
+                WHERE pi.product_id = p.id
+            ) img ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object(
+                        'product_size_id', ps.id,
+                        'size_id', s.id,
+                        'size_name', s.size_name,
+                        'stock_quantity', ps.stock_quantity
+                    )
+                    ORDER BY s.id
+                ) AS sizes
+                FROM product_sizes ps
+                JOIN sizes s ON s.id = ps.size_id
+                WHERE ps.product_id = p.id
+            ) sz ON true
             ORDER BY p.id DESC
         `);
 
@@ -313,18 +437,41 @@ async function getProductById(req, res) {
             SELECT
                 p.*,
                 c.category_name,
-                COALESCE(
-                    json_agg(
-                        json_build_object('id', pi.id, 'image_url', pi.image_url)
-                        ORDER BY pi.id
-                    ) FILTER (WHERE pi.id IS NOT NULL),
-                    '[]'::json
-                ) AS images
+                pt.type_name AS product_type_name,
+                COALESCE(stock.total_stock, 0) AS stock_quantity,
+                COALESCE(img.images, '[]'::json) AS images,
+                COALESCE(sz.sizes, '[]'::json) AS sizes
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
-            LEFT JOIN product_images pi ON pi.product_id = p.id
+            LEFT JOIN product_type pt ON p.product_type_id = pt.id
+            LEFT JOIN LATERAL (
+                SELECT SUM(ps.stock_quantity)::int AS total_stock
+                FROM product_sizes ps
+                WHERE ps.product_id = p.id
+            ) stock ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object('id', pi.id, 'image_url', pi.image_url)
+                    ORDER BY pi.id
+                ) AS images
+                FROM product_images pi
+                WHERE pi.product_id = p.id
+            ) img ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object(
+                        'product_size_id', ps.id,
+                        'size_id', s.id,
+                        'size_name', s.size_name,
+                        'stock_quantity', ps.stock_quantity
+                    )
+                    ORDER BY s.id
+                ) AS sizes
+                FROM product_sizes ps
+                JOIN sizes s ON s.id = ps.size_id
+                WHERE ps.product_id = p.id
+            ) sz ON true
             WHERE p.id = $1
-            GROUP BY p.id, c.category_name
         `, [productId]);
 
         if (!result.rows.length) {
@@ -352,12 +499,20 @@ async function updateStock(req, res) {
     try {
 
         const productId = req.params.id;
-        const { stock_quantity } = req.body;
+        const { stock_quantity, product_size_id, size_id, size_name } = req.body;
 
-        if (!stock_quantity) {
+        if (stock_quantity === undefined || stock_quantity === null || stock_quantity === '') {
             return res.status(400).json({
                 status: 'error',
                 message: 'Stock quantity is required'
+            });
+        }
+
+        const normalizedStock = toNonNegativeInt(stock_quantity, -1);
+        if (normalizedStock < 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Stock quantity must be a non-negative integer'
             });
         }
 
@@ -373,14 +528,48 @@ async function updateStock(req, res) {
             });
         }
 
-        await pool.query(
-            `UPDATE products SET stock_quantity = $1 WHERE id = $2`,
-            [stock_quantity, productId]
+        if (product_size_id) {
+            const updated = await pool.query(
+                `UPDATE product_sizes
+                 SET stock_quantity = $1
+                 WHERE id = $2 AND product_id = $3
+                 RETURNING id, product_id, size_id, stock_quantity`,
+                [normalizedStock, product_size_id, productId]
+            );
+
+            if (!updated.rows.length) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: 'Product size not found'
+                });
+            }
+
+            return res.status(200).json({
+                status: 'success',
+                message: 'Stock updated successfully',
+                data: updated.rows[0]
+            });
+        }
+
+        const resolvedSizeId = await resolveSizeId(
+            pool,
+            Number.isInteger(Number(size_id)) ? Number(size_id) : null,
+            size_name || '40'
+        );
+
+        const upserted = await pool.query(
+            `INSERT INTO product_sizes (product_id, size_id, stock_quantity)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (product_id, size_id)
+             DO UPDATE SET stock_quantity = EXCLUDED.stock_quantity
+             RETURNING id, product_id, size_id, stock_quantity`,
+            [productId, resolvedSizeId, normalizedStock]
         );
 
         return res.status(200).json({
             status: 'success',
-            message: 'Stock updated successfully'
+            message: 'Stock updated successfully',
+            data: upserted.rows[0]
         });
 
     } catch (error) {
@@ -426,18 +615,41 @@ async function getProductsByType(req, res) {
             SELECT
                 p.*,
                 c.category_name,
-                COALESCE(
-                    json_agg(
-                        json_build_object('id', pi.id, 'image_url', pi.image_url)
-                        ORDER BY pi.id
-                    ) FILTER (WHERE pi.id IS NOT NULL),
-                    '[]'::json
-                ) AS images
+                pt.type_name AS product_type_name,
+                COALESCE(stock.total_stock, 0) AS stock_quantity,
+                COALESCE(img.images, '[]'::json) AS images,
+                COALESCE(sz.sizes, '[]'::json) AS sizes
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
-            LEFT JOIN product_images pi ON pi.product_id = p.id
+            LEFT JOIN product_type pt ON p.product_type_id = pt.id
+            LEFT JOIN LATERAL (
+                SELECT SUM(ps.stock_quantity)::int AS total_stock
+                FROM product_sizes ps
+                WHERE ps.product_id = p.id
+            ) stock ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object('id', pi.id, 'image_url', pi.image_url)
+                    ORDER BY pi.id
+                ) AS images
+                FROM product_images pi
+                WHERE pi.product_id = p.id
+            ) img ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object(
+                        'product_size_id', ps.id,
+                        'size_id', s.id,
+                        'size_name', s.size_name,
+                        'stock_quantity', ps.stock_quantity
+                    )
+                    ORDER BY s.id
+                ) AS sizes
+                FROM product_sizes ps
+                JOIN sizes s ON s.id = ps.size_id
+                WHERE ps.product_id = p.id
+            ) sz ON true
             WHERE p.product_type_id = $1
-            GROUP BY p.id, c.category_name
             ORDER BY p.id DESC
         `, [productTypeId]);
 
