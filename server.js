@@ -31,6 +31,7 @@ const userRoutes = require('./routes/users');
 const productRoutes = require('./routes/products');
 const categoryRoutes = require('./routes/categories');
 const cartRoutes = require('./routes/cart');
+const orderRoutes = require('./routes/orders');
 
 // ===== API ROUTES =====
 app.use('/auth', authRoutes);
@@ -38,6 +39,7 @@ app.use('/users', userRoutes);
 app.use('/products', productRoutes);
 app.use('/categories', categoryRoutes);
 app.use('/cart', cartRoutes);
+app.use('/orders', orderRoutes);
 
 // ===== HEALTH CHECK =====
 app.get('/', (req, res) => {
