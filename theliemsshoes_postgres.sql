@@ -108,7 +108,7 @@ CREATE TABLE cart_items (
   quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
   UNIQUE (cart_id, product_size_id),
   FOREIGN KEY (cart_id) REFERENCES carts(id) ON DELETE CASCADE,
-  FOREIGN KEY (product_size_id) REFERENCES product_sizes(id)
+  FOREIGN KEY (product_size_id) REFERENCES product_sizes(id) ON DELETE CASCADE
 );
 
 CREATE TABLE orders (
@@ -127,13 +127,147 @@ CREATE TABLE orders (
 CREATE TABLE order_items (
   id SERIAL PRIMARY KEY,
   order_id INTEGER NOT NULL,
-  product_size_id INTEGER NOT NULL,
+  product_size_id INTEGER,
+  snapshot_product_id INTEGER,
+  snapshot_product_size_id INTEGER,
+  snapshot_product_name VARCHAR(200),
+  snapshot_size_name VARCHAR(20),
+  snapshot_image_url TEXT,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   price DECIMAL(10,2) NOT NULL,
   UNIQUE (order_id, product_size_id),
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-  FOREIGN KEY (product_size_id) REFERENCES product_sizes(id)
+  FOREIGN KEY (product_size_id) REFERENCES product_sizes(id) ON DELETE SET NULL
 );
+
+CREATE OR REPLACE FUNCTION f_update_product_and_sync_cart(
+  p_product_id INTEGER,
+  p_category_id INTEGER,
+  p_product_type_id INTEGER,
+  p_product_name TEXT,
+  p_description TEXT,
+  p_price NUMERIC,
+  p_size_stocks JSONB DEFAULT NULL,
+  p_image_urls JSONB DEFAULT NULL
+)
+RETURNS TABLE(updated_product_id INTEGER, removed_cart_items INTEGER, removed_size_ids INTEGER[])
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_removed_size_ids INTEGER[] := '{}';
+  v_removed_cart_items INTEGER := 0;
+BEGIN
+  PERFORM 1 FROM products WHERE id = p_product_id FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Product % not found', p_product_id;
+  END IF;
+
+  UPDATE products
+  SET category_id = p_category_id,
+      product_type_id = p_product_type_id,
+      product_name = p_product_name,
+      description = p_description,
+      price = p_price
+  WHERE id = p_product_id;
+
+  IF p_size_stocks IS NOT NULL THEN
+    CREATE TEMP TABLE tmp_size_stocks (
+      size_id INTEGER,
+      size_name TEXT,
+      stock_quantity INTEGER,
+      resolved_size_id INTEGER
+    ) ON COMMIT DROP;
+
+    INSERT INTO tmp_size_stocks (size_id, size_name, stock_quantity)
+    SELECT
+      NULLIF(TRIM(item->>'size_id'), '')::INTEGER,
+      NULLIF(TRIM(item->>'size_name'), ''),
+      GREATEST(COALESCE((item->>'stock_quantity')::INTEGER, 0), 0)
+    FROM jsonb_array_elements(p_size_stocks) AS item;
+
+    UPDATE tmp_size_stocks t
+    SET resolved_size_id = t.size_id
+    WHERE t.size_id IS NOT NULL
+      AND EXISTS (SELECT 1 FROM sizes s WHERE s.id = t.size_id);
+
+    UPDATE tmp_size_stocks t
+    SET resolved_size_id = s.id
+    FROM sizes s
+    WHERE t.resolved_size_id IS NULL
+      AND t.size_name IS NOT NULL
+      AND s.size_name = t.size_name;
+
+    INSERT INTO sizes (size_name)
+    SELECT DISTINCT t.size_name
+    FROM tmp_size_stocks t
+    WHERE t.resolved_size_id IS NULL
+      AND t.size_name IS NOT NULL
+    ON CONFLICT (size_name) DO NOTHING;
+
+    UPDATE tmp_size_stocks t
+    SET resolved_size_id = s.id
+    FROM sizes s
+    WHERE t.resolved_size_id IS NULL
+      AND t.size_name IS NOT NULL
+      AND s.size_name = t.size_name;
+
+    IF EXISTS (SELECT 1 FROM tmp_size_stocks WHERE resolved_size_id IS NULL) THEN
+      RAISE EXCEPTION 'Invalid size payload for product %', p_product_id;
+    END IF;
+
+    CREATE TEMP TABLE tmp_size_merged (
+      resolved_size_id INTEGER PRIMARY KEY,
+      stock_quantity INTEGER NOT NULL
+    ) ON COMMIT DROP;
+
+    INSERT INTO tmp_size_merged (resolved_size_id, stock_quantity)
+    SELECT resolved_size_id, SUM(stock_quantity)::INTEGER
+    FROM tmp_size_stocks
+    GROUP BY resolved_size_id;
+
+    SELECT COALESCE(array_agg(ps.id), '{}')
+    INTO v_removed_size_ids
+    FROM product_sizes ps
+    WHERE ps.product_id = p_product_id
+      AND NOT EXISTS (
+        SELECT 1
+        FROM tmp_size_merged t
+        WHERE t.resolved_size_id = ps.size_id
+      );
+
+    IF array_length(v_removed_size_ids, 1) IS NOT NULL THEN
+      DELETE FROM cart_items
+      WHERE product_size_id = ANY(v_removed_size_ids);
+      GET DIAGNOSTICS v_removed_cart_items = ROW_COUNT;
+
+      DELETE FROM product_sizes
+      WHERE id = ANY(v_removed_size_ids);
+    END IF;
+
+    INSERT INTO product_sizes (product_id, size_id, stock_quantity)
+    SELECT p_product_id, t.resolved_size_id, t.stock_quantity
+    FROM tmp_size_merged t
+    ON CONFLICT (product_id, size_id)
+    DO UPDATE SET stock_quantity = EXCLUDED.stock_quantity;
+  END IF;
+
+  IF p_image_urls IS NOT NULL THEN
+    DELETE FROM product_images WHERE product_id = p_product_id;
+
+    INSERT INTO product_images (product_id, image_url)
+    SELECT p_product_id, TRIM(value)
+    FROM jsonb_array_elements_text(p_image_urls) AS value
+    WHERE TRIM(value) <> '';
+  END IF;
+
+  updated_product_id := p_product_id;
+  removed_cart_items := v_removed_cart_items;
+  removed_size_ids := v_removed_size_ids;
+
+  RETURN NEXT;
+END;
+$$;
 
 CREATE TABLE user_coupons (
   id SERIAL PRIMARY KEY,
@@ -248,9 +382,44 @@ INSERT INTO cart_items (id, cart_id, product_size_id, quantity) VALUES (4, 3, 20
 INSERT INTO orders (id, user_id, total_amount, coupon_id, discount_amount, final_amount, status, created_at) VALUES (1, 3, 5918000, 2, 50000, 5868000, 'completed', '2026-03-24T08:00:00Z');
 INSERT INTO orders (id, user_id, total_amount, coupon_id, discount_amount, final_amount, status, created_at) VALUES (2, 5, 7759000, NULL, 0, 7759000, 'pending', '2026-03-24T08:20:00Z');
 
-INSERT INTO order_items (id, order_id, product_size_id, quantity, price) VALUES (1, 1, 13, 1, 3239000);
-INSERT INTO order_items (id, order_id, product_size_id, quantity, price) VALUES (2, 1, 6, 1, 2679000);
-INSERT INTO order_items (id, order_id, product_size_id, quantity, price) VALUES (3, 2, 10, 1, 7759000);
+INSERT INTO order_items (
+  id,
+  order_id,
+  product_size_id,
+  snapshot_product_id,
+  snapshot_product_size_id,
+  snapshot_product_name,
+  snapshot_size_name,
+  snapshot_image_url,
+  quantity,
+  price
+) VALUES (1, 1, 13, 4, 13, 'Air Force 1', '40', '/uploads/1774112141537-AIR_FORCE_1__07.jpg', 1, 3239000);
+
+INSERT INTO order_items (
+  id,
+  order_id,
+  product_size_id,
+  snapshot_product_id,
+  snapshot_product_size_id,
+  snapshot_product_name,
+  snapshot_size_name,
+  snapshot_image_url,
+  quantity,
+  price
+) VALUES (2, 1, 6, 2, 6, 'Nike Air Force 1 LV8 3', '39', '/uploads/1774113459756-AIR_FORCE_1_LV8_3__GS_.png', 1, 2679000);
+
+INSERT INTO order_items (
+  id,
+  order_id,
+  product_size_id,
+  snapshot_product_id,
+  snapshot_product_size_id,
+  snapshot_product_name,
+  snapshot_size_name,
+  snapshot_image_url,
+  quantity,
+  price
+) VALUES (3, 2, 10, 3, 10, 'Jordan Tiempo Maestro Elite SE', '41', '/uploads/1774113243689-TIEMPO_MAESTRO_ELITE_FG_SE.jpg', 1, 7759000);
 
 INSERT INTO user_coupons (id, user_id, coupon_id, won_at, is_redeemed, redeemed_at, order_id) VALUES (1, 2, 1, '2026-03-23T08:00:00Z', FALSE, NULL, NULL);
 INSERT INTO user_coupons (id, user_id, coupon_id, won_at, is_redeemed, redeemed_at, order_id) VALUES (2, 3, 2, '2026-03-23T08:05:00Z', TRUE, '2026-03-24T08:00:00Z', 1);

@@ -215,6 +215,7 @@ async function addProduct(req, res) {
 
 // Sửa sản phẩm
 async function updateProduct(req, res) {
+    const client = await pool.connect();
     try {
         if (!isAdmin(req)) {
             return res.status(403).json({ status: 'error', message: 'Access denied' });
@@ -232,39 +233,27 @@ async function updateProduct(req, res) {
         }
 
         const parsedSizeStocks = parseSizeStocks(req.body.size_stocks || req.body.product_sizes);
-        const shouldUpdateSizeStocks = Boolean(parsedSizeStocks);
+        let effectiveSizeStocks = null;
+        if (parsedSizeStocks) {
+            effectiveSizeStocks = parsedSizeStocks;
+        } else if (stock_quantity !== undefined && stock_quantity !== null && stock_quantity !== '') {
+            effectiveSizeStocks = [{ size_name: '40', stock_quantity: toNonNegativeInt(stock_quantity, 0) }];
+        }
 
-        await pool.query('BEGIN');
+        await client.query('BEGIN');
 
-        await pool.query(
-            `UPDATE products
-             SET category_id = $1,
-                 product_type_id = $2,
-                 product_name = $3,
-                 description = $4,
-                 price = $5
-             WHERE id = $6`,
-            [category_id, product_type_id || null, product_name.trim(), description.trim(), price, productId]
+        const currentImageRows = await client.query(
+            `SELECT image_url FROM product_images WHERE product_id = $1`,
+            [productId]
         );
 
-        if (shouldUpdateSizeStocks) {
-            await upsertProductSizes(pool, productId, parsedSizeStocks);
-        } else if (stock_quantity !== undefined && stock_quantity !== null && stock_quantity !== '') {
-            const defaultSizeId = await resolveSizeId(pool, null, '40');
-            const normalizedStock = toNonNegativeInt(stock_quantity, 0);
-            await pool.query(
-                `INSERT INTO product_sizes (product_id, size_id, stock_quantity)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (product_id, size_id)
-                 DO UPDATE SET stock_quantity = EXCLUDED.stock_quantity`,
-                [productId, defaultSizeId, normalizedStock]
-            );
-        }
-        // Cập nhật hình ảnh: Xử lý xóa hình ảnh cũ không còn trong danh sách mới và thêm hình ảnh mới
-        const rawImageUrls = req.body.image_urls;
-        if (rawImageUrls !== undefined) {
-            let submittedImageUrls = [];
+        const existingImageUrls = currentImageRows.rows
+            .map((row) => String(row.image_url || '').trim())
+            .filter(Boolean);
 
+        const rawImageUrls = req.body.image_urls;
+        let submittedImageUrls = [];
+        if (rawImageUrls !== undefined) {
             if (Array.isArray(rawImageUrls)) {
                 submittedImageUrls = rawImageUrls;
             } else if (typeof rawImageUrls === 'string') {
@@ -275,68 +264,71 @@ async function updateProduct(req, res) {
                     submittedImageUrls = [];
                 }
             }
+        }
 
-            const normalizedSubmittedUrls = submittedImageUrls
+        const files = Array.isArray(req.files) ? req.files : [];
+        const uploadedImageUrls = files.map((file) => `/uploads/${file.filename}`);
+
+        let effectiveImageUrls = null;
+        if (rawImageUrls !== undefined) {
+            effectiveImageUrls = submittedImageUrls
                 .map((url) => String(url || '').trim())
                 .filter(Boolean);
+            effectiveImageUrls = [...effectiveImageUrls, ...uploadedImageUrls];
+        } else if (uploadedImageUrls.length > 0) {
+            effectiveImageUrls = [...existingImageUrls, ...uploadedImageUrls];
+        }
 
-            const currentImageRows = await pool.query(
-                `SELECT id, image_url FROM product_images WHERE product_id = $1`,
-                [productId]
-            );
+        const syncResult = await client.query(
+            `SELECT *
+             FROM f_update_product_and_sync_cart(
+                $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb
+             )`,
+            [
+                Number(productId),
+                Number(category_id),
+                product_type_id ? Number(product_type_id) : null,
+                product_name.trim(),
+                description.trim(),
+                Number(price),
+                effectiveSizeStocks ? JSON.stringify(effectiveSizeStocks) : null,
+                effectiveImageUrls ? JSON.stringify(effectiveImageUrls) : null
+            ]
+        );
 
-            const submittedSet = new Set(normalizedSubmittedUrls);
+        await client.query('COMMIT');
 
-            for (const imageRow of currentImageRows.rows) {
-                if (!submittedSet.has(imageRow.image_url)) {
-                    await pool.query(
-                        `DELETE FROM product_images WHERE id = $1 AND product_id = $2`,
-                        [imageRow.id, productId]
-                    );
-
-                    if (String(imageRow.image_url || '').startsWith('/uploads/')) {
-                        const fileName = path.basename(imageRow.image_url);
-                        const filePath = path.join(uploadDir, fileName);
-                        if (fs.existsSync(filePath)) {
-                            fs.unlinkSync(filePath);
-                        }
+        if (effectiveImageUrls) {
+            const keepSet = new Set(effectiveImageUrls);
+            for (const imageUrl of existingImageUrls) {
+                if (!keepSet.has(imageUrl) && String(imageUrl).startsWith('/uploads/')) {
+                    const fileName = path.basename(imageUrl);
+                    const filePath = path.join(uploadDir, fileName);
+                    if (fs.existsSync(filePath)) {
+                        fs.unlinkSync(filePath);
                     }
                 }
             }
-
-            const currentUrlSet = new Set(currentImageRows.rows.map((row) => row.image_url));
-            for (const imageUrl of normalizedSubmittedUrls) {
-                if (!currentUrlSet.has(imageUrl)) {
-                    await pool.query(
-                        `INSERT INTO product_images (product_id, image_url) VALUES ($1, $2)`,
-                        [productId, imageUrl]
-                    );
-                }
-            }
-        }
-        // Kết thúc cập nhật hình ảnh
-
-        const files = Array.isArray(req.files) ? req.files : [];
-        for (const file of files) {
-            const imageUrl = `/uploads/${file.filename}`;
-            await pool.query(
-                `INSERT INTO product_images (product_id, image_url) VALUES ($1, $2)`,
-                [productId, imageUrl]
-            );
         }
 
-        await pool.query('COMMIT');
+        const syncData = syncResult.rows[0] || null;
 
-        return res.status(200).json({ status: 'success', message: 'Product updated successfully' });
+        return res.status(200).json({
+            status: 'success',
+            message: 'Product updated successfully',
+            data: syncData
+        });
     }
     catch (error) {
         try {
-            await pool.query('ROLLBACK');
+            await client.query('ROLLBACK');
         } catch (_rollbackError) {
             // Ignore rollback errors and return original failure.
         }
 
         return res.status(500).json({ status: 'error', message: error.message });
+    } finally {
+        client.release();
     }
 }
 

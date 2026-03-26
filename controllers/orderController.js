@@ -14,10 +14,27 @@ const createOrder = async (req, res) => {
 
         // Lấy items trong giỏ
         const cartQuery = `
-            SELECT c.id as cart_id, ci.product_id, ci.quantity, p.price, p.stock_quantity
+            SELECT 
+                c.id as cart_id,
+                ci.product_size_id,
+                ci.quantity,
+                ps.stock_quantity,
+                p.id AS product_id,
+                p.product_name,
+                p.price,
+                s.size_name,
+                (
+                    SELECT pi.image_url
+                    FROM product_images pi
+                    WHERE pi.product_id = p.id
+                    ORDER BY pi.id ASC
+                    LIMIT 1
+                ) AS image_url
             FROM carts c
             JOIN cart_items ci ON c.id = ci.cart_id
-            JOIN products p ON ci.product_id = p.id
+            JOIN product_sizes ps ON ci.product_size_id = ps.id
+            JOIN products p ON ps.product_id = p.id
+            JOIN sizes s ON s.id = ps.size_id
             WHERE c.user_id = $1
         `;
         const cartResult = await client.query(cartQuery, [userId]);
@@ -36,7 +53,7 @@ const createOrder = async (req, res) => {
             if (item.quantity > item.stock_quantity) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ 
-                    message: `Sản phẩm ID ${item.product_id} không đủ hàng (Còn: ${item.stock_quantity})` 
+                    message: `Bien the san pham ID ${item.product_size_id} khong du hang (Con: ${item.stock_quantity})` 
                 });
             }
             totalAmount += Number(item.price) * item.quantity;
@@ -54,13 +71,34 @@ const createOrder = async (req, res) => {
         // Tạo Order Items & Trừ kho
         for (const item of cartItems) {
             await client.query(
-                'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)',
-                [orderId, item.product_id, item.quantity, item.price]
+                `INSERT INTO order_items (
+                    order_id,
+                    product_size_id,
+                    snapshot_product_id,
+                    snapshot_product_size_id,
+                    snapshot_product_name,
+                    snapshot_size_name,
+                    snapshot_image_url,
+                    quantity,
+                    price
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [
+                    orderId,
+                    item.product_size_id,
+                    item.product_id,
+                    item.product_size_id,
+                    item.product_name,
+                    item.size_name,
+                    item.image_url,
+                    item.quantity,
+                    item.price
+                ]
             );
 
             await client.query(
-                'UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2',
-                [item.quantity, item.product_id]
+                'UPDATE product_sizes SET stock_quantity = stock_quantity - $1 WHERE id = $2',
+                [item.quantity, item.product_size_id]
             );
         }
 
@@ -145,10 +183,29 @@ const getOrderDetails = async (req, res) => {
 
         // Lấy danh sách sản phẩm trong đơn
         const itemsQuery = `
-            SELECT oi.*, p.product_name, 
-                   (SELECT image_url FROM product_images WHERE product_id = p.id LIMIT 1) as image_url
+            SELECT
+                oi.id,
+                oi.order_id,
+                oi.product_size_id,
+                oi.quantity,
+                oi.price,
+                COALESCE(oi.snapshot_product_id, p.id) AS product_id,
+                COALESCE(oi.snapshot_product_name, p.product_name) AS product_name,
+                COALESCE(oi.snapshot_size_name, s.size_name) AS size_name,
+                COALESCE(
+                    oi.snapshot_image_url,
+                    (
+                        SELECT pi.image_url
+                        FROM product_images pi
+                        WHERE pi.product_id = p.id
+                        ORDER BY pi.id ASC
+                        LIMIT 1
+                    )
+                ) AS image_url
             FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
+            LEFT JOIN product_sizes ps ON oi.product_size_id = ps.id
+            LEFT JOIN products p ON ps.product_id = p.id
+            LEFT JOIN sizes s ON s.id = ps.size_id
             WHERE oi.order_id = $1
         `;
         const itemsResult = await pool.query(itemsQuery, [id]);
