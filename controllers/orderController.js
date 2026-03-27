@@ -168,9 +168,25 @@ const getOrderDetails = async (req, res) => {
         
         // Lấy thông tin chung đơn hàng
         const orderQuery = `
-            SELECT o.*, u.username, u.email, u.phone_number, u.address
+            SELECT
+                o.*, 
+                u.username,
+                u.email,
+                COALESCE(pp.shipping_info->>'fullName', u.full_name, u.username) AS recipient_name,
+                COALESCE(pp.shipping_info->>'phone', u.phone_number) AS recipient_phone,
+                COALESCE(pp.shipping_info->>'address', u.address) AS recipient_address,
+                COALESCE(pp.payment_method, 'cod') AS payment_method,
+                pp.status AS payment_status,
+                pp.trans_id AS payment_trans_id
             FROM orders o
             JOIN users u ON o.user_id = u.id
+            LEFT JOIN LATERAL (
+                SELECT payment_method, status, trans_id, shipping_info
+                FROM pending_payments
+                WHERE order_id = o.id
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ) pp ON TRUE
             WHERE o.id = $1
         `;
         const orderResult = await pool.query(orderQuery, [id]);
