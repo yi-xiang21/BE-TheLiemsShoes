@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS cart_items CASCADE;
 DROP TABLE IF EXISTS carts CASCADE;
 DROP TABLE IF EXISTS user_coupons CASCADE;
 DROP TABLE IF EXISTS coupons CASCADE;
+DROP TABLE IF EXISTS pending_payments CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS product_sizes CASCADE;
@@ -122,6 +123,30 @@ CREATE TABLE orders (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE SET NULL
+);
+
+CREATE TABLE pending_payments (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  cart_id INTEGER NOT NULL,
+  cart_snapshot JSONB NOT NULL,
+  total_amount DECIMAL(10,2) NOT NULL,
+  shipping_info JSONB,
+  payment_method VARCHAR(20) NOT NULL DEFAULT 'momo',
+  request_id VARCHAR(120) NOT NULL UNIQUE,
+  momo_order_id VARCHAR(120) NOT NULL UNIQUE,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  result_code VARCHAR(30),
+  message TEXT,
+  trans_id VARCHAR(120),
+  order_id INTEGER,
+  expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '30 minutes'),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK (status IN ('pending', 'success', 'failed', 'expired')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (cart_id) REFERENCES carts(id) ON DELETE CASCADE,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
 );
 
 CREATE TABLE order_items (

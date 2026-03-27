@@ -32,6 +32,7 @@ const productRoutes = require('./routes/products');
 const categoryRoutes = require('./routes/categories');
 const cartRoutes = require('./routes/cart');
 const orderRoutes = require('./routes/orders');
+const paymentRoutes = require('./routes/payment');
 
 // ===== API ROUTES =====
 app.use('/auth', authRoutes);
@@ -40,6 +41,7 @@ app.use('/products', productRoutes);
 app.use('/categories', categoryRoutes);
 app.use('/cart', cartRoutes);
 app.use('/orders', orderRoutes);
+app.use('/payment', paymentRoutes);
 
 // ===== HEALTH CHECK =====
 app.get('/', (req, res) => {
