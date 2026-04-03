@@ -148,10 +148,64 @@ const getMyOrders = async (req, res) => {
         if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
         const query = `
-            SELECT id, total_amount, status, created_at
-            FROM orders
-            WHERE user_id = $1
-            ORDER BY created_at DESC
+            SELECT
+                o.id,
+                o.total_amount,
+                o.final_amount,
+                o.status,
+                o.created_at,
+                COALESCE(pp.payment_method, 'cod') AS payment_method,
+                pp.status AS payment_status,
+                first_item.product_size_id,
+                first_item.product_name,
+                first_item.size_name,
+                first_item.image_url,
+                first_item.quantity,
+                first_item.item_total,
+                item_stat.total_items,
+                item_stat.total_quantity
+            FROM orders o
+            LEFT JOIN LATERAL (
+                SELECT payment_method, status
+                FROM pending_payments
+                WHERE order_id = o.id
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ) pp ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT
+                    oi.product_size_id,
+                    COALESCE(oi.snapshot_product_name, p.product_name) AS product_name,
+                    COALESCE(oi.snapshot_size_name, s.size_name) AS size_name,
+                    COALESCE(
+                        oi.snapshot_image_url,
+                        (
+                            SELECT pi.image_url
+                            FROM product_images pi
+                            WHERE pi.product_id = p.id
+                            ORDER BY pi.id ASC
+                            LIMIT 1
+                        )
+                    ) AS image_url,
+                    oi.quantity,
+                    (oi.quantity * oi.price) AS item_total
+                FROM order_items oi
+                LEFT JOIN product_sizes ps ON oi.product_size_id = ps.id
+                LEFT JOIN products p ON ps.product_id = p.id
+                LEFT JOIN sizes s ON s.id = ps.size_id
+                WHERE oi.order_id = o.id
+                ORDER BY oi.id ASC
+                LIMIT 1
+            ) first_item ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(*) AS total_items,
+                    COALESCE(SUM(quantity), 0) AS total_quantity
+                FROM order_items
+                WHERE order_id = o.id
+            ) item_stat ON TRUE
+            WHERE o.user_id = $1
+            ORDER BY o.created_at DESC
         `;
         const result = await pool.query(query, [userId]);
         res.json({ data: result.rows });
@@ -165,6 +219,12 @@ const getMyOrders = async (req, res) => {
 const getOrderDetails = async (req, res) => {
     try {
         const { id } = req.params;
+        const requesterId = req.user?.id;
+        const requesterRole = req.user?.role;
+
+        if (!requesterId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
         
         // Lấy thông tin chung đơn hàng
         const orderQuery = `
@@ -196,6 +256,12 @@ const getOrderDetails = async (req, res) => {
         }
 
         const order = orderResult.rows[0];
+
+        const isAdmin = requesterRole === 'admin';
+        const isOwner = Number(order.user_id) === Number(requesterId);
+        if (!isAdmin && !isOwner) {
+            return res.status(403).json({ message: 'Bạn không có quyền xem đơn hàng này' });
+        }
 
         // Lấy danh sách sản phẩm trong đơn
         const itemsQuery = `
